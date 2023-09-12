@@ -1,0 +1,128 @@
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from datetime import datetime
+import os
+
+print("Loading . . . ")
+
+# Base URL of the website
+base_url = "https://digital.nhs.uk"
+
+# URL of the page containing the dataset
+page_url = "/data-and-information/publications/statistical/shmi/"
+
+# Name of the dataset (CSV files)
+dataset = "shmi-data"
+
+format = ".csv"
+# Send a GET request to the webpage
+response = requests.get(base_url + page_url, verify=False)
+
+if response.status_code == 200:
+  # Parse the HTML content
+  soup = BeautifulSoup(response.content, 'html.parser')
+
+  # Find all anchor (link) elements
+  links = soup.find_all('a')
+
+  # Filter links to find CSV file URLs
+  links_response = [link.get('href') for link in links if link.get('href', '')]
+
+  if links_response:
+    for link in links_response:
+      # Check if the link is relevant to the dataset
+      if link.startswith(page_url):
+        current_date = datetime.today().strftime('%Y-%m')
+        endlink = link.replace(page_url, "")
+
+        # Check if the link is from the future
+        if current_date < endlink:
+          break
+        else:
+          # Construct the complete URL for the link
+          linkjoin = urljoin(base_url, link)
+
+          # Send a GET request to the link
+          links_response = requests.get(linkjoin, verify=False)
+
+          if links_response.status_code == 200:
+            # Parse the HTML content of the response
+            soup2 = BeautifulSoup(links_response.content, 'html.parser')
+
+            # Find all anchor (link) elements
+            links2 = soup2.find_all('a')
+
+            # Filter links to find CSV file URLs
+            links2_response = [link2.get('href') for link2 in links2 if link2.get('href', '').endswith(dataset)]
+
+            if links2_response:
+              for link2 in links2_response:
+                # Check if the link is relevant to the dataset
+                if link2.startswith(link):
+                  # Construct the complete URL for the link
+                  linkjoin2 = urljoin(base_url, link2)
+                  print(linkjoin2)
+
+                  # Send a GET request to the link
+                  links2_response = requests.get(linkjoin2, verify=False)
+
+                  if links2_response.status_code == 200:
+                    # Parse the HTML content of the response
+                    soup3 = BeautifulSoup(links2_response.content, 'html.parser')
+
+                    # Find all anchor (link) elements
+                    links3 = soup3.find_all('a')
+
+                    # Filter links to find CSV file URLs
+                    links3_response = [link3.get('href') for link3 in links3 if link3.get('href', '').endswith(format)]
+
+                    if links3_response:
+                      for link3 in links3_response:
+                        # Check if the link is a valid URL
+                        if link3.startswith('https'):
+                          # Construct the complete URL for the link
+                          linkjoin3 = urljoin(base_url, link3)
+                          print(linkjoin3)
+
+                          most_recent_csv_url = None
+                          most_recent_date = datetime.min
+
+                          # Send a GET request to the link
+                          links3_response = requests.get(linkjoin3, verify=False)
+
+                          if links3_response.status_code == 200:
+                            # Extract the upload date from the response headers
+                            upload_date = links3_response.headers.get('Last-Modified')
+
+                            if upload_date:
+                              upload_date = datetime.strptime(upload_date, '%a, %d %b %Y %H:%M:%S %Z')
+
+                              # Compare the upload date with the most recent date found so far
+                              if upload_date > most_recent_date:
+                                most_recent_date = upload_date
+                                most_recent_csv_url = link3
+
+                            if most_recent_csv_url:
+                              # Get the filename from the URL
+                              file_name = most_recent_csv_url.split('/')[-1]
+                              file_name = file_name.replace('%20', '_')
+                              file_name = file_name.replace('%28', '')
+                              file_name = file_name.replace('%29', '')
+                              file_name = file_name.replace('csv.csv', '')
+                              file_name = f"{file_name}{most_recent_date.strftime('%d-%m-%Y')}{format}"
+
+                              if not os.path.exists(file_name):
+                                # Download the most recent CSV file
+                                if links3_response.status_code == 200:
+                                  with open(file_name, 'wb') as file:
+                                    file.write(links3_response.content)
+                                    print(f"File '{file_name}' downloaded successfully.")
+                                else:
+                                  print("Error occurred during file download.")
+                              else:
+                                print(f"File '{file_name}' already exists. Skipping download.")
+                            else:
+                              print("Unable to determine the most recent CSV file.")
+                          else:
+                            print("Error occurred while accessing the webpage.")
