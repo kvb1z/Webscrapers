@@ -1,0 +1,66 @@
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from datetime import datetime
+import os
+print("Loading . . . ")
+base_url = "https://datamillnorth.org/dataset/"
+page_url = "ep6lz/household-waste-collections"
+
+# Send a GET request to the webpage
+response = requests.get(base_url + page_url)
+
+if response.status_code == 200:
+    # Parse the HTML content
+    soup = BeautifulSoup(response.content, 'html.parser')
+
+    # Find all anchor (link) elements
+    links = soup.find_all('a')
+
+    # Filter links to find CSV file URLs
+    csv_links = [link.get('href') for link in links if link.get('href', '').endswith('.csv')]
+
+    if csv_links:
+        # Find the most recent CSV file URL based on upload date
+        most_recent_csv_url = None
+        most_recent_date = datetime.min
+
+        for csv_link in csv_links:
+            if csv_link.startswith('/'):
+                csv_link = urljoin(base_url, csv_link)
+
+            csv_response = requests.get(csv_link)
+            if csv_response.status_code == 200:
+                # Extract the upload date from the response headers
+                upload_date = csv_response.headers.get('Last-Modified')
+                if upload_date:
+                    upload_date = datetime.strptime(upload_date, '%a, %d %b %Y %H:%M:%S %Z')
+
+                    # Compare the upload date with the most recent date found so far
+                    if upload_date > most_recent_date:
+                        most_recent_date = upload_date
+                        most_recent_csv_url = csv_link
+
+        if most_recent_csv_url:
+            # Get the filename from the URL
+            page_url = page_url[6:]
+            file_name = most_recent_csv_url.split('/')[-1]
+            file_name = f"{page_url.replace('/', '_')}_{most_recent_date.strftime('%Y-%m-%d')}_{file_name}"
+
+            if not os.path.exists(file_name):
+                # Download the most recent CSV file
+                csv_response = requests.get(most_recent_csv_url)
+                if csv_response.status_code == 200:
+                    with open(file_name, 'wb') as file:
+                        file.write(csv_response.content)
+                    print(f"File '{file_name}' downloaded successfully.")
+                else:
+                    print("Error occurred during file download.")
+            else:
+                print(f"File '{file_name}' already exists. Skipping download.")
+        else:
+            print("Unable to determine the most recent CSV file.")
+    else:
+        print("No CSV file found on the webpage.")
+else:
+    print("Error occurred while accessing the webpage.")
